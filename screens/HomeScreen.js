@@ -1,5 +1,6 @@
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, StatusBar } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { usePlayer } from '../contexts/PlayerContext';
 import ListaMusicas from '../Componentes/ListaMusicas';
@@ -8,83 +9,155 @@ import PlayerPanel from '../Componentes/PlayerPanel';
 import MiniPlayer from '../Componentes/MiniPlayer';
 import PlaylistsPanel from '../Componentes/PlaylistPanel';
 
+const ABAS = [
+  { chave: 'lista', icone: 'musical-notes', iconeOff: 'musical-notes-outline', rotulo: 'Músicas' },
+  { chave: 'playlist', icone: 'albums', iconeOff: 'albums-outline', rotulo: 'Playlists' },
+  { chave: 'config', icone: 'stats-chart', iconeOff: 'stats-chart-outline', rotulo: 'Stats & Config' },
+];
 
 export default function HomeScreen() {
-  const { musicas, carregando } = usePlayer();
-  const [abaAtiva, setAbaAtiva] = useState('lista'); 
+  const { musicas, carregando, musicaAtual } = usePlayer();
+  const [abaAtiva, setAbaAtiva] = useState('lista');
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerr}>
-        <Text> music two  </Text>
+    <LinearGradient colors={['#7db29e', '#2f613e']} style={styles.container}>
+      <StatusBar barStyle="light-content" />
+
+      {abaAtiva !== 'player' && (
+        <View style={styles.topHeader}>
+          <View>
+            <Text style={styles.titulo}>MSC TWO</Text>
+            <Text style={styles.subtitulo}>
+              {carregando ? 'Sincronizando...' : `${musicas.length} músicas offline`}
+            </Text>
+          </View>
+
+          {musicaAtual && (
+            <Pressable style={styles.badgeTocando} onPress={() => setAbaAtiva('player')}>
+              
+              <Text style={styles.badgeTexto}>tocando</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
+      <View style={styles.conteudo}>
+        {abaAtiva === 'lista' && <ListaMusicas />}
+        {abaAtiva === 'playlist' && <PlaylistsPanel />}
+        {abaAtiva === 'config' && <ConfigPanel />}
+        {abaAtiva === 'player' && <PlayerPanel onVoltar={() => setAbaAtiva('lista')} />}
       </View>
 
-      <LinearGradient
-        colors={['#a0b27d', '#2f613e']}
-        start=  {{ x: 0, y: 0 }}
-        end={{x: 0.7, y: 0}}
-        style={styles.ccontainer}
-      >
-        <View style={styles.msc}>
-          {abaAtiva === 'lista' && <ListaMusicas />}
-          {abaAtiva === 'config' && <ConfigPanel />}
-          {abaAtiva === 'player' && <PlayerPanel />}
-          {abaAtiva === 'playlist' && <PlaylistsPanel />}
-          
+      {abaAtiva !== 'player' && (
+        <View style={styles.rodape}>
+          <MiniPlayer onPress={() => setAbaAtiva('player')} />
+
+          <View style={styles.bottomBar}>
+            {ABAS.map((aba) => {
+              const ativa = abaAtiva === aba.chave;
+              return (
+                <Pressable
+                  key={aba.chave}
+                  style={[styles.navItem, ativa && styles.navItemAtivo]}
+                  onPress={() => setAbaAtiva(aba.chave)}
+                >
+                  <Ionicons
+                    name={ativa ? aba.icone : aba.iconeOff}
+                    size={21}
+                    color={ativa ? '#2bea81' : '#7b9187'}
+                  />
+                  <Text style={[styles.navTexto, ativa && styles.navTextoAtivo]}>
+                    {aba.rotulo}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
-
-        <View style={styles.header}>
-          <Text style={styles.titulo}>MSC TWO</Text>
-          <Text style={styles.subtitulo}>
-            {carregando ? 'Carregando...' : `${musicas.length} musicas`}
-          </Text>
-
-          <Pressable style={styles.configBotao} onPress={() => setAbaAtiva('lista')}>
-            <Text style={styles.configTexto}>🎵{'\n'}musicas</Text>
-          </Pressable>
-          <Pressable style={styles.configBotao} onPress={() => setAbaAtiva('playlist')}>
-            <Text style={styles.configTexto}>💽{'\n'}playlist</Text>
-          </Pressable>
-          <Pressable style={styles.configBotao} onPress={() => setAbaAtiva('config')}>
-            <Text style={styles.configTexto}>⚙️{'\n'}config</Text>
-          </Pressable>
-          
-        </View>
-
-        <MiniPlayer onPress={() => setAbaAtiva('player')} />
-      </LinearGradient>
-
-
-
-
-
-      
-    </View>
+      )}
+    </LinearGradient>
   );
 }
 
-
 const styles = StyleSheet.create({
+  container: { flex: 1 },
 
-  container: { flex: 1, },
+  topHeader: {
+    paddingTop: 50,
+    paddingBottom: 14,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
 
-  ccontainer: { flex: 1, flexDirection: 'row', },
+  titulo: {
+    color: '#ffffff',
+    fontSize: 25,
+    fontFamily: 'SpaceGrotesk_700Bold',
+    letterSpacing: 1,
+  },
 
-  headerr: { backgroundColor: '#f2ecec', padding: 16, alignItems: 'center', justifyContent: 'center' },
+  subtitulo: {
+    color: '#083b1f',
+    fontSize: 12,
+    fontFamily: 'SpaceGrotesk_700Bold',
+    marginTop: 2,
+  },
 
-  header: { flex: 6, backgroundColor: '#2f613e' },
+  badgeTocando: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2bea81',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 5,
+  },
 
-  titulo: { color: '#2bea81', fontSize: 28, fontWeight: '600', fontFamily: 'SpaceGrotesk_700Bold', textAlign: 'center', marginTop: 10, },
+  badgeTexto: {
+    color: '#0c1210',
+    fontSize: 12,
+    fontFamily: 'SpaceGrotesk_700Bold',
+  },
 
-  subtitulo: { color: '#fff8f8', fontSize: 14, marginTop: 4, fontFamily: 'SpaceGrotesk_700Bold', textAlign: 'center', },
+  conteudo: { flex: 1 },
 
-  configBotao: { width: '88%', bottom: 3, left: 3, right: 3, paddingHorizontal: 20, borderRadius: 13,
-  paddingVertical: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3d4951',
+  rodape: {
+    backgroundColor: '#ffffff00',
+    borderTopWidth: 1,
+    borderTopColor: '#00ff9900',
+    paddingTop: 8,
+    paddingBottom: 16,
+    paddingHorizontal: 14,
+  },
 
-  alignSelf: 'center', gap: 10, marginTop: 78 },
+  bottomBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 4,
+  },
 
-  configTexto: { color: '#b0ffa4', fontSize: 14, fontFamily: 'SpaceGrotesk_700Bold', textAlign: 'center' },
+  navItem: {
+    
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 14,
+    gap: 4,
+  },
 
-  msc: { position: 'relative', flex: 19,  },
+  navItemAtivo: {
+    backgroundColor: 'rgba(153, 234, 189, 0.1)',
+  },
 
+  navTexto: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontFamily: 'SpaceGrotesk_700Bold',
+  },
+
+  navTextoAtivo: {
+    color: '#2bea81',
+  },
 });

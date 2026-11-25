@@ -1,61 +1,112 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import Slider from '@react-native-community/slider';
+import { Ionicons } from '@expo/vector-icons';
 import { usePlayer } from '../contexts/PlayerContext';
-
-
+import { Disco } from './visual';
 
 export default function MiniPlayer({ onPress }) {
-  const { musicaAtual, status, player, proximaMusica, musicaAnterior, alternarPlayPause } = usePlayer();
+  const { musicaAtual, capaAtual, status, proximaMusica, alternarPlayPause } = usePlayer();
 
   if (!musicaAtual) return null;
 
+  const progresso = status.duration ? (status.currentTime / status.duration) * 100 : 0;
+
   return (
-    <Pressable style={styles.player} onPress={onPress}>
-      <Text style={styles.playerNome} numberOfLines={1}>{musicaAtual.nome}</Text>
-      <Slider
-        style={styles.slider}
-        minimumValue={0}
-        maximumValue={status.duration || 1}
-        value={status.currentTime}
-        minimumTrackTintColor="#86bd5c"
-        maximumTrackTintColor="rgb(196, 255, 240)"
-        thumbTintColor="#f8f7f7"
-        onSlidingComplete={(v) => player.seekTo(v)}
-      />
-      <View style={styles.playerLinha}>
-        <View style={styles.playerControles}>
-          <Pressable onPress={musicaAnterior} style={{ marginLeft: 20 }}>
-            <Text style={styles.playerIcone}>⏮</Text>
+    <Pressable style={styles.card} onPress={onPress}>
+      <View style={styles.linha}>
+        <Disco capa={capaAtual} nome={musicaAtual.nome} tamanho={42} />
+
+        <View style={styles.info}>
+          <Text style={styles.nome} numberOfLines={1}>
+            {musicaAtual.nome}
+          </Text>
+          <Text style={styles.sub}>
+            {status.playing ? 'Tocando agora · toque para abrir' : 'Pausado'}
+          </Text>
+        </View>
+
+        <View style={styles.controles}>
+          <Pressable
+            style={styles.botaoPlay}
+            onPress={() => alternarPlayPause(musicaAtual.id)}
+          >
+            <Ionicons
+              name={status.playing ? 'pause' : 'play'}
+              size={18}
+              color="#0c1210"
+              style={status.playing ? null : { marginLeft: 2 }}
+            />
           </Pressable>
-          <Pressable onPress={() => alternarPlayPause(musicaAtual.id)} style={{ marginLeft: 20 }}>
-            <Text style={styles.playerIcone}>{status.playing ? '▐▐' : '▶'}</Text>
-          </Pressable>
-          <Pressable onPress={proximaMusica} style={{ marginLeft: 20 }}>
-            <Text style={styles.playerIcone}>⏭</Text>
+
+          <Pressable onPress={proximaMusica} hitSlop={10}>
+            <Ionicons name="play-skip-forward" size={22} color="#e6f0ec" />
           </Pressable>
         </View>
+      </View>
+
+      <View style={styles.barraFundo}>
+        <View style={[styles.barraProgresso, { width: `${progresso}%` }]} />
       </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  player: { width: '90%', position: 'absolute', bottom: 60, left: 21, right: 0,
-  backgroundColor: '#3d4951', paddingHorizontal: 50, paddingTop: 10,
-  borderRadius: 24, paddingBottom: 18,
+  card: {
+    backgroundColor: '#0f433f',
+    borderRadius: 16,
+    padding: 10,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#0f433f',
   },
 
-  slider: { width: '100%', height: 24, marginBottom: 4 },
+  linha: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
 
-  playerLinha: { flexDirection: 'row', marginTop: 6 },
+  info: { flex: 1 },
 
-  playerNome: { color: '#fff', fontSize: 14, flex: 1, marginRight: 12, fontFamily: 'SpaceGrotesk_700Bold', },
+  nome: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontFamily: 'SpaceGrotesk_700Bold',
+  },
 
-  playerControles: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center' },
-  
-  playerIcone: { color: '#fff', fontSize: 20, fontFamily: 'SpaceGrotesk_700Bold',},
+  sub: {
+    color: '#2bea81',
+    fontSize: 11,
+    fontFamily: 'SpaceGrotesk_700Bold',
+    marginTop: 2,
+  },
+
+  controles: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingRight: 4,
+  },
+
+  botaoPlay: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#2bea81',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  barraFundo: {
+    height: 3,
+    backgroundColor: '#405a4f',
+    borderRadius: 2,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+
+  barraProgresso: {
+    height: 3,
+    backgroundColor: '#2bea81',
+  },
 });
-
-
-
-

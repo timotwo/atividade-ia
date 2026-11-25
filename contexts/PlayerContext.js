@@ -3,6 +3,7 @@ import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-au
 import * as MediaLibrary from 'expo-media-library/legacy';
 import MusicInfo from 'expo-music-info-2';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { chaveMes } from '../Componentes/visual';
 
 const DURACAO_MINIMA_SEGUNDOS = 53;
 const PlayerContext = createContext(null);
@@ -66,11 +67,22 @@ export function PlayerProvider({ children }) {
   const [carregando, setCarregando] = useState(true);
   const [capaAtual, setCapaAtual] = useState(null);
   const [playlists, setPlaylists] = useState([]);
+  const [stats, setStats] = useState({});
+  const [capasCache, setCapasCache] = useState({});
+  const capasPedidasRef = useRef(new Set());
   const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
 
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
   const jaAvancou = useRef(false);
+
+  // estatísticas
+  const statsRef = useRef({});
+  const pendenteRef = useRef({ id: null, nome: '', segundos: 0 });
+  const ultimoTempoRef = useRef(null);
+
+  // quantas músicas "tocar a seguir" estão logo depois da atual
+  const qtdManualRef = useRef(0);
 
   const musicaAtual = indiceNaFila !== null
     ? musicas.find((m) => m.id === filaAtual[indiceNaFila]) ?? null
@@ -97,6 +109,11 @@ export function PlayerProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    carregarStats();
+  }, []);
+
+  // avanço automático ao terminar
+  useEffect(() => {
     if (!musicaAtual || !status.duration) return;
 
     const terminou =
@@ -112,6 +129,93 @@ export function PlayerProvider({ children }) {
       jaAvancou.current = false;
     }
   }, [status.currentTime, status.duration]);
+
+  // acumula tempo ouvido enquanto toca
+  useEffect(() => {
+    const p = pendenteRef.current;
+    if (!p.id) return;
+
+    const t = status.currentTime;
+    const ultimo = ultimoTempoRef.current;
+    ultimoTempoRef.current = t;
+
+    if (!status.playing || ultimo === null) return;
+
+    const delta = t - ultimo;
+    if (delta > 0 && delta < 3) {
+      p.segundos += delta;
+      if (p.segundos >= 10) flushPendente();
+    }
+  }, [status.currentTime]);
+
+  // ao pausar, grava o que estava pendente
+  useEffect(() => {
+    if (!status.playing) {
+      flushPendente();
+      ultimoTempoRef.current = null;
+    }
+  }, [status.playing]);
+
+  // ---------- estatísticas ----------
+
+  async function carregarStats() {
+    try {
+      const salvas = await AsyncStorage.getItem('@stats');
+
+      if (salvas) {
+        const obj = JSON.parse(salvas);
+        statsRef.current = obj;
+        setStats(obj);
+      }
+    } catch (e) {}
+  }
+
+  function registrarStats(musica, plays, segundos) {
+    if (!musica?.id) return;
+
+    const mes = chaveMes();
+    const atual = statsRef.current[musica.id] ?? {
+      nome: musica.nome,
+      plays: 0,
+      segundos: 0,
+      mensal: {},
+    };
+    const doMes = atual.mensal?.[mes] ?? { plays: 0, segundos: 0 };
+
+    const novo = {
+      ...statsRef.current,
+      [musica.id]: {
+        ...atual,
+        nome: musica.nome,
+        plays: atual.plays + plays,
+        segundos: atual.segundos + segundos,
+        mensal: {
+          ...atual.mensal,
+          [mes]: {
+            plays: doMes.plays + plays,
+            segundos: doMes.segundos + segundos,
+          },
+        },
+      },
+    };
+
+    statsRef.current = novo;
+    setStats(novo);
+
+    AsyncStorage.setItem('@stats', JSON.stringify(novo)).catch(() => {});
+  }
+
+  function flushPendente() {
+    const p = pendenteRef.current;
+
+    if (p.id && p.segundos > 0) {
+      registrarStats({ id: p.id, nome: p.nome }, 0, p.segundos);
+    }
+
+    p.segundos = 0;
+  }
+
+  // ---------- músicas ----------
 
   async function carregarMusicas() {
     setCarregando(true);
@@ -152,6 +256,7 @@ export function PlayerProvider({ children }) {
         id: item.id,
         nome: item.filename.replace(/\.(mp3)$/i, ''),
         uri: item.uri,
+        duracao: item.duration ?? 0,
       }))
       .sort((a, b) =>
         a.nome.localeCompare(b.nome, 'pt-BR', {
@@ -231,12 +336,14 @@ export function PlayerProvider({ children }) {
           musicas: p.musicas.filter(
             (id) => id !== musicaId
           ),
+          capaMusicaId:
+            p.capaMusicaId === musicaId ? null : p.capaMusicaId ?? null,
         };
       })
     );
   }
 
-  async function buscarCapa(item) {
+  async function lerCapa(item) {
     try {
       const info = await MediaLibrary.getAssetInfoAsync(item.id);
 
@@ -250,19 +357,47 @@ export function PlayerProvider({ children }) {
         { picture: true }
       );
 
-      const uriFinal = corrigirPictureData(
+      return corrigirPictureData(
         metadata?.picture?.pictureData
       );
-
-      setCapaAtual(uriFinal);
     } catch (e) {
-      setCapaAtual(null);
+      return null;
     }
   }
 
+  async function buscarCapa(item) {
+    setCapaAtual(await lerCapa(item));
+  }
+
+  // carrega (uma única vez) a capa de qualquer música, para usar nas playlists
+  async function garantirCapa(musicaId) {
+    if (capasPedidasRef.current.has(musicaId)) return;
+
+    const musica = musicas.find((m) => m.id === musicaId);
+    if (!musica) return;
+
+    capasPedidasRef.current.add(musicaId);
+
+    const uri = await lerCapa(musica);
+
+    setCapasCache((anterior) => ({ ...anterior, [musicaId]: uri }));
+  }
+
+  // define qual música fornece a capa da playlist (null = sem capa)
+  function definirCapaPlaylist(playlistId, musicaId) {
+    salvarPlaylists(
+      playlists.map((p) =>
+        p.id === playlistId ? { ...p, capaMusicaId: musicaId } : p
+      )
+    );
+  }
+
+  // ---------- reprodução ----------
+
   function tocarMusica(
     idMusica,
-    fila = musicas.map((m) => m.id)
+    fila = musicas.map((m) => m.id),
+    indice
   ) {
     const musica = musicas.find(
       (m) => m.id === idMusica
@@ -270,10 +405,22 @@ export function PlayerProvider({ children }) {
 
     if (!musica) return;
 
-    const novoIndice = fila.indexOf(idMusica);
+    // nova lista escolhida pelo usuário: zera a fila manual
+    if (fila !== filaAtual) {
+      qtdManualRef.current = 0;
+    }
+
+    const novoIndice = indice ?? fila.indexOf(idMusica);
+
+    // fecha as estatísticas da música anterior e abre a nova
+    flushPendente();
+    pendenteRef.current = { id: musica.id, nome: musica.nome, segundos: 0 };
+    ultimoTempoRef.current = null;
+    registrarStats(musica, 1, 0);
 
     setFilaAtual(fila);
     setIndiceNaFila(novoIndice);
+    setCapaAtual(null);
 
     player.replace({ uri: musica.uri });
 
@@ -308,9 +455,12 @@ export function PlayerProvider({ children }) {
     const proximoIndice =
       (indiceNaFila + 1) % filaAtual.length;
 
+    qtdManualRef.current = Math.max(0, qtdManualRef.current - 1);
+
     tocarMusica(
       filaAtual[proximoIndice],
-      filaAtual
+      filaAtual,
+      proximoIndice
     );
   }
 
@@ -326,10 +476,36 @@ export function PlayerProvider({ children }) {
       (indiceNaFila - 1 + filaAtual.length) %
       filaAtual.length;
 
+    qtdManualRef.current = 0;
+
     tocarMusica(
       filaAtual[anteriorIndice],
-      filaAtual
+      filaAtual,
+      anteriorIndice
     );
+  }
+
+  // "Tocar a seguir": coloca a música logo depois da atual sem interromper
+  // Retorna 'fila' (adicionada) ou 'tocando' (nada tocava, começou agora)
+  function tocarProxima(idMusica) {
+    if (!musicas.some((m) => m.id === idMusica)) return null;
+
+    if (indiceNaFila === null || filaAtual.length === 0) {
+      tocarMusica(idMusica);
+      return 'tocando';
+    }
+
+    const posicao = indiceNaFila + 1 + qtdManualRef.current;
+
+    setFilaAtual([
+      ...filaAtual.slice(0, posicao),
+      idMusica,
+      ...filaAtual.slice(posicao),
+    ]);
+
+    qtdManualRef.current += 1;
+
+    return 'fila';
   }
 
   return (
@@ -348,6 +524,11 @@ export function PlayerProvider({ children }) {
         alternarPlayPause,
         proximaMusica,
         musicaAnterior,
+        tocarProxima,
+        stats,
+        capasCache,
+        garantirCapa,
+        definirCapaPlaylist,
         playlists,
         criarPlaylist,
         excluirPlaylist,
